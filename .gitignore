@@ -1,5 +1,5 @@
 output/*
-src/__pycache__/*
+__pycache__*
 data/*
 test/*
 output*
