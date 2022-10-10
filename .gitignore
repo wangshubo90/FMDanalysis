@@ -3,3 +3,4 @@ __pycache__*
 data/*
 test/*
 output*
+.DS_Store
