@@ -85,6 +85,7 @@ def fit_vessel(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
     def fit(a, mesh_x1d, mesh_y1d, image1d):
         
         z = calc_map(a, mesh_x1d, mesh_y1d)
+        z = -sigmoid(()*0.5)
         
         return 1-np.abs(pearsonr(z, image1d**0.5)[0])
     
@@ -100,6 +101,25 @@ def fit_vessel(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
     return res_lsq
 
 def fit_vessel_fourier(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]), 
+               lbound=[-np.inf], rbound=[np.inf]):
+    def fit(a, mesh_x1d, mesh_y1d, image1d):
+        
+        z = calc_map(a, mesh_x1d, mesh_y1d, edge_func=calc_edge_fourier)
+        
+        return 1-np.abs(pearsonr(z, image1d>image1d.mean())[0])
+    
+    h, w = image.shape
+    x_grid = np.linspace(0, w-1, w)
+    y_grid = np.linspace(0, h-1, h)
+    mesh_x, mesh_y = np.meshgrid(x_grid, y_grid)
+    mesh_x1d = mesh_x.flatten()
+    mesh_y1d = mesh_y.flatten()
+    image1d = image.flatten()
+    a0 = guess
+    res_lsq = least_squares(fit, a0,method="dogbox",ftol=1e-5, xtol=1e-5, gtol=1e-5, args=(mesh_x1d, mesh_y1d, image1d), bounds=[lbound, rbound])
+    return res_lsq
+
+def fit_vessel_free(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]), 
                lbound=[-np.inf], rbound=[np.inf]):
     def fit(a, mesh_x1d, mesh_y1d, image1d):
         
@@ -138,7 +158,7 @@ def fit(fimage, plot=False, **kwargs):
     if "guess" in kwargs:
         _, init = fourier_init_condition(h)
         guess = kwargs["guess"]
-        init = (guess - np.abs(guess)*0.5, guess + np.abs(guess)*0.5)
+        init = (guess - np.abs(guess)*0.25, guess + np.abs(guess)*0.25)
     else:
         guess, init = fourier_init_condition(h)
         
@@ -159,7 +179,12 @@ def fit(fimage, plot=False, **kwargs):
         axes[1].plot(x_grid, edge2, "r-")
 
         # plt.imshow(np.concatenate([image, mask], axis=1), cmap = "gray")
-        plt.show()
+        show = kwargs.get("show", True)
+        save_to = kwargs.get("save_to", False)
+        if save_to:
+            plt.savefig(save_to, dpi=150)
+        if show:
+            plt.show()
         plt.close()
     
     # image = image*255
@@ -243,8 +268,6 @@ if __name__ == "__main__":
     
     xdata= np.array(xdata)
     ydata= np.array(ydata)
-    plt.figure(figsize=(10, 5))
-    plt.plot(xdata, np.convolve(ydata, np.ones(12), 'same') / 12)
     
 
             

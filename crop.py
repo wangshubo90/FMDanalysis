@@ -1,8 +1,10 @@
 import cv2
+import os
 
-def video_to_image(vidcap, xl, xr, yup, ydown):
+def video_to_image(vidcap, xl, xr, yup, ydown, fps = None, freq=100, dstdir="output"):
     
-    fps = vidcap.get(cv2.CAP_PROP_FPS)
+    if fps is None:
+        fps = vidcap.get(cv2.CAP_PROP_FPS)
     dt = 1 / fps
     n_frames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
     print(f"Total Frames: {n_frames}")
@@ -13,10 +15,13 @@ def video_to_image(vidcap, xl, xr, yup, ydown):
     while count < n_frames:
         # vidcap.set(cv2.CAP_PROP_POS_MSEC,(count*1000))    # added this line 
         success,image = vidcap.read()
-        if not image is None and count%100==0:
+        if not image is None and count%freq==0:
             image = image[yup:ydown, xl:xr]
-            print ("output" + "\\frame%d.jpg" % count)
-            cv2.imwrite( "output" + "\\frame%d.jpg" % count, image)     # save frame as JPEG file
+            os.makedirs(os.path.join(dstdir, "orgCropped"), mode=0o777, exist_ok=True)
+            curtime = count*dt
+            imagefname = "{:d}m{:d}s.png".format(int(curtime//60), int(curtime%60))
+            print(os.path.join(dstdir, "orgCropped",imagefname))
+            cv2.imwrite( os.path.join(dstdir, "orgCropped" , imagefname), image)     # save frame as JPEG file
             count = count + 1
         else:
             count = count + 1

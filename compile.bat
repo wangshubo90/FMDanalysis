@@ -1,0 +1,1 @@
+pyinstaller --add-data "FMD.ui;." --noconsole main.py

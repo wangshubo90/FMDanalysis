@@ -1,24 +1,16 @@
+import os
 import numpy as np
-from scipy import special
 from scipy.optimize import least_squares
 from scipy.stats import pearsonr
-from matplotlib import pyplot as plt
-import matplotlib
-from matplotlib.animation import FuncAnimation
+# from matplotlib import pyplot as plt
+# import matplotlib
+# from matplotlib.animation import FuncAnimation
 import cv2
 import copy
+from skimage.exposure import match_histograms
 
-# def pearsonr(x , y):
-#     x = np.asarray(x)
-#     y = np.asarray(y)
-#     n = len(x)
-#     mx = x.mean()
-#     my = y.mean()
-#     xm, ym = x-mx, y-my
-#     r_num = np.add.reduce(xm * ym)
-#     r_den = np.sqrt(ss(xm) * ss(ym))
-#     r = r_num / r_den
-#     return r
+CANNY_LOWER=70
+CANNY_HIGHER=200
 
 def sigmoid(x):
     
@@ -42,7 +34,7 @@ def calc_edge_fourier(mesh_x, a, N=5):
     w2 = a[2*N+3]
     
     for i in range(1, N+1):
-        edge1 += a[i*2] * np.cos(w1 * i * mesh_x) + a[i*2+1] * np.sin(w1 * i *mesh_x)
+        edge1 += a[i*2] * np.cos(w1 * i * (mesh_x)) + a[i*2+1] * np.sin(w1 * i *mesh_x)
         edge2 += a[i*2+2*N+2] * np.cos(w2 * i * mesh_x) + a[i*2+3+2*N] * np.sin(w2 * i *mesh_x)
     
     return edge1, edge2
@@ -56,17 +48,18 @@ def calc_edge_polynomial(mesh_x, a, order=1):
     
     edge1 = a[0]
     edge2 = a[order+1]
+    mid = mesh_x.mean()
     
     for i in range(1, order+1):
-        edge1 += a[i]*mesh_x**i
-        edge2 += a[i+order+1]*mesh_x**i
+        edge1 += a[i]*(mesh_x-mid)**i
+        edge2 += a[i+order+1]*(mesh_x-mid)**i
     
     return edge1, edge2
 
 def polynomial_init_condition(H, order=1):
     if order==1:
         guess = np.array([H*0.25, 0, H*0.75, 0])
-        bounds = (np.array([H*0.1, -0.2, H//2, -0.2]), np.array([H//2,0.2,  H*0.9, 0.2]))
+        bounds = (np.array([H*0.05, -0.2, H//2, -0.2]), np.array([H//2,0.2,  H*0.95, 0.2]))
     else:
         guess = np.array([H*0.25, *[0.1**i for i in range(1, order+1)], H*0.75, *[0.1**i for i in range(1, order+1)]])
         bounds = (np.array([0, *(-np.inf,)*order, H//2, *(-np.inf,)*order]), np.array([H/2, *(np.inf,)*order,H, *(np.inf,)*order]))
@@ -75,11 +68,14 @@ def polynomial_init_condition(H, order=1):
 def calc_map(a, mesh_x, mesh_y, edge_func=calc_edge_polynomial, **kargs):
     edge1, edge2 = edge_func(mesh_x, a, **kargs)
     
+
     # z1 = -special.erf((mesh_y - edge1) * 1)
     # z2 = special.erf((mesh_y - edge2) * 1)
     
-    z1 = -sigmoid((mesh_y - edge1)*0.5)
-    z2 =  sigmoid((mesh_y - edge2)*0.5)
+    z1 = -sigmoid((mesh_y - edge1)*2)
+    z2 =  sigmoid((mesh_y - edge2)*2)
+    # z1 =  sigmoid(np.abs(mesh_y - edge1)*0.5)
+    # z2 =  sigmoid(np.abs(mesh_y - edge2)*0.5)
     
     z = z1 + z2
     
@@ -88,7 +84,10 @@ def calc_map(a, mesh_x, mesh_y, edge_func=calc_edge_polynomial, **kargs):
 def calc_thickness(a, mesh_x, edge_func=calc_edge_fourier):
     
     edge1, edge2 = edge_func(mesh_x, a)
-    thickness = np.mean(np.abs(edge1 - edge2))
+    
+    midline = (edge1 + edge2) / 2
+    midline_arc = np.sum(np.sqrt((midline[:-1] - midline[1:])**2 + 1))
+    thickness = np.sum(np.abs(edge1 - edge2)) / midline_arc
     
     return thickness
 
@@ -106,7 +105,7 @@ def fit_vessel(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
                lbound=[-0.1, -0.01], rbound=[0.1, 0.01]):
     def fit(a, mesh_x1d, mesh_y1d, image1d):
         
-        z = calc_map(a, mesh_x1d, mesh_y1d).flatten()
+        z = calc_map(a, mesh_x1d, mesh_y1d, edge_func=calc_edge_polynomial).flatten()
         
         return 1-np.abs(pearsonr(z, image1d**0.5)[0])
     
@@ -137,10 +136,10 @@ def fit_vessel_fourier(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
     mesh_y1d = mesh_y.flatten()
     image1d = image.flatten()
     a0 = guess
-    res_lsq = least_squares(fit, a0, method="trf",ftol=1e-6, xtol=1e-5, gtol=1e-5, args=(mesh_x1d, mesh_y1d, image1d), bounds=[lbound, rbound])
+    res_lsq = least_squares(fit, a0, method="trf",ftol=1e-5, xtol=1e-4, gtol=1e-5, args=(mesh_x1d, mesh_y1d, image1d), bounds=[lbound, rbound])
     return res_lsq
     
-def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_vessel_fourier, edge_func=calc_edge_fourier, **kwargs):
+def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_vessel_fourier, edge_func=calc_edge_fourier, refimg = None, **kwargs):
     if isinstance(fimage, str):
         gimage = cv2.imread(fimage)
     else:
@@ -148,12 +147,20 @@ def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_ves
     assert isinstance(gimage, np.ndarray), f"{type(gimage)}"
     gimage = cv2.cvtColor(gimage, cv2.COLOR_BGR2GRAY)
     image = copy.deepcopy(gimage)
-    image = image.astype(np.float32)
-    image = image/255.0
+    # image = cv2.GaussianBlur(image, (3,3), 1.5)
+    if not refimg is None:
+        image = match_histograms(image, refimg, channel_axis=-1)
+    else:
+        image = cv2.equalizeHist(image)
     image = cv2.GaussianBlur(image, (3,3), 2.0)
-    image = image**2*255
-    image= image.astype(np.uint8)
-    ret,image = cv2.threshold(image,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    
+    image = cv2.Canny(image, CANNY_LOWER, CANNY_HIGHER, L2gradient=True)
+    image = cv2.GaussianBlur(image, (3,3), 3.0)
+    image = image.astype(np.float32)
+    # image = image/255.0
+    # image = image**1
+    # image= image.astype(np.uint8)
+    # ret,image = cv2.threshold(image,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     # image = (image - image.mean()) / np.std(image)
     h, w = image.shape
     x_grid = np.linspace(0, w-1, w)
@@ -162,7 +169,7 @@ def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_ves
     guess, init = init_func(h)
     if "guess" in kwargs:
         guess = kwargs["guess"]
-        init = (guess - np.abs(guess)*0.25, guess + np.abs(guess)*0.25)
+        init = (guess - np.abs(guess)*0.15, guess + np.abs(guess)*0.15)
         
     assert guess.shape==init[0].shape and guess.shape == init[1].shape
     result = fit_func(image, guess=guess, lbound=init[0], rbound=init[1])
@@ -170,25 +177,30 @@ def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_ves
     
     edge1, edge2 = edge_func(x_grid, result.x)
     
-    if plot:
-        mask = masking(gimage, result.x, edge_func=edge_func)
-        figure, axes = plt.subplots(1, 2, figsize=(15, 7))
+    # if plot:
+    #     mask = masking(gimage, result.x, edge_func=edge_func)
+    #     figure, axes = plt.subplots(1, 3, figsize=(15, 7))
 
-        axes[0].imshow(gimage, cmap = "gray")
-        axes[0].plot(x_grid, edge1, "r-")
-        axes[0].plot(x_grid, edge2, "r-")
-        axes[1].imshow(mask, cmap = "gray")
-        axes[1].plot(x_grid, edge1, "r-")
-        axes[1].plot(x_grid, edge2, "r-")
+    #     axes[0].imshow(gimage, cmap = "gray")
+    #     axes[0].plot(x_grid, edge1, "r-")
+    #     axes[0].plot(x_grid, edge2, "r-")        
+    #     axes[1].imshow(image, cmap = "gray")
+    #     axes[1].plot(x_grid, edge1, "r-")
+    #     axes[1].plot(x_grid, edge2, "r-")
+    #     axes[2].imshow(mask, cmap = "gray")
+    #     axes[2].plot(x_grid, edge1, "r-")
+    #     axes[2].plot(x_grid, edge2, "r-")
 
-        # plt.imshow(np.concatenate([image, mask], axis=1), cmap = "gray")
-        plt.show()
-        plt.close()
+    #     # plt.imshow(np.concatenate([image, mask], axis=1), cmap = "gray")
+    #     if isinstance(fimage, str):
+    #         plt.title(os.path.basename(fimage))
+    #     plt.show()
+    #     plt.close()
     
     # image = image*255
 
     return result.x, x_grid, gimage, edge1, edge2
-
+'''
 def animation():
     
     matplotlib.use('Agg')
@@ -228,8 +240,9 @@ def animation():
     ani = FuncAnimation(fig, update, frames=np.arange(0, 10000, 5), repeat=False)
     plt.show()
     ani.save('animation.gif', writer='imagemagick', fps=10)
-
+'''
 if __name__ == "__main__":
+    from matplotlib import pyplot as plt
     xdata, ydata = [], []
     # for i in range(1,  1000, 100):
     #     if i ==1:
@@ -242,16 +255,17 @@ if __name__ == "__main__":
     
     import glob, time
     t1 = time.time()
-    filelist = glob.glob(r"output/*.jpg")
-    N = 5
-    filelist = filelist[::N]
+    filelist = glob.glob(r"test4/orgCropped/*.png")
+    # N = 5
+    # filelist = filelist[::N]
     dt = 1/(20 / N)
     for i, file in enumerate(filelist):
         if i ==0:
             guess, x_grid, image, edge1, edge2 = fit(file, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel)
             temp = guess
+            gimage = copy.deepcopy(image)
         else:
-            guess, x_grid, image, edge1, edge2 = fit(file, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, guess=guess)
+            guess, x_grid, image, edge1, edge2 = fit(file, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=gimage)
         thickness = calc_thickness(guess, x_grid, edge_func=calc_edge_polynomial)
         # print(temp - guess)
         xdata.append(i*dt)
@@ -262,10 +276,16 @@ if __name__ == "__main__":
     
     xdata= np.array(xdata)
     ydata= np.array(ydata)
-    plt.figure(figsize=(10, 5))    
-    plt.plot(xdata, ydata)
 
+    from scipy import signal
+    b, a = signal.butter(2, 1/(23), "low", analog = False) 
+    col_filtered = signal.filtfilt(b, a, ydata)
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(xdata, ydata)
     # plt.plot(xdata, np.convolve(ydata, np.ones(12), 'same') / 12)
+    plt.plot(xdata, col_filtered)
+    plt.title(f"{CANNY_LOWER}-{CANNY_HIGHER}")
     
 
             

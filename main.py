@@ -7,8 +7,10 @@ from PyQt5.uic import loadUi
 import cv2
 import numpy as np
 from fitVessel import *
-
+from crop import video_to_image
 from crop import click_event
+from scipy import signal
+import json
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -25,28 +27,72 @@ class MainWindow(QDialog):
         self.browseOutput.clicked.connect(self.browseOutputDir)
         self.saveButtonVessel.clicked.connect(self.calibrate_scale_vessel)
         self.calcThickness.clicked.connect(self.fit_vessel)
+        self.saveButton.clicked.connect(self.saveCroppedImage)
+        self.loadrefButton.clicked.connect(self.loadRefImage)
+        self.browseConfig.clicked.connect(self.loadConfig)
+        self.save_freq = 100
+        self.freqBox.setText(str(self.save_freq))
+        self.freqBox.textChanged[str].connect(self._updateSavFreq)
+        self.fpsBox.setText("23")
+        self.fpsBox.textChanged[str].connect(self._updateFPS)
         self.videofile = ""
         self.outputDir = ""
         self.vidcap=None
         self.firstImage = None
         self.imshowName = 'image'
+        self._hasbox = False
+        self.refimg=None
+        self.scaling=1.0
+        self.sampling_freq = 1
+        self.freqBox_2.setText(str(self.sampling_freq))
+        self.freqBox_2.textChanged[str].connect(self._updateSampling)
         # global vesselBoxLeft, vesselBoxRight, vesselBoxUp, vesselBoxDown , signalBoxLeft, signalBoxRight, signalBoxUp, signalBoxDown
     
     def browseVideoFile(self):
-        filename = QFileDialog.getOpenFileName(None, 'Load Video', '', 'Video Files (*.avi *.mp4)')[0]
+        filename = QFileDialog.getOpenFileName(None, 'Load Video', '', 'Video Files (*.avi *.mp4 *.mov)')[0]
         self.videofile = filename
         self.showVideoFile.setText(filename)
         
+    def _updateFPS(self):
+        if self.fpsBox.text() != "":
+            self.fps = int(self.fpsBox.text())
+        
+    def _updateSampling(self):
+        if self.freqBox_2.text() != "":
+            self.sampling_freq = int(self.freqBox_2.text()) 
+        
+    def _updateSavFreq(self):
+        if self.freqBox.text() != "":
+            self.save_freq = int(self.freqBox.text()) 
+        
     def browseOutputDir(self):
-        dirname=QFileDialog.getExistingDirectory(self, "Choose Output Directory")
+        dirname=QFileDialog.getExistingDirectory(self, "Choose Output Directory", r"C:\Users\wangs\dev\Ultrasond\output1")
         self.outputDir = dirname
         self.showOutput.setText(self.outputDir)
+        
+    def loadRefImage(self):
+        filename = QFileDialog.getOpenFileName(None, 'Load Reference Image', '', 'Video Files (*.png *.jpg *.jpeg *.bmp *.tiff *.tif)')[0]
+        if filename:
+            self.refimg = cv2.imread(filename)
+            self.refimg = cv2.cvtColor(self.refimg, cv2.COLOR_BGR2GRAY)
+            
+    def loadConfig(self):
+        filename = QFileDialog.getOpenFileName(None, 'Load Configuration', '', 'JSON Files (*.json)')[0]
+        if filename:
+            config = json.load(open(filename, "r"))
+            for k ,v in config.items():
+                setattr(self, k, v)
+                
+            self.fpsBox.setText(str(config.get("fps", str(self.fps))))
+            self.freqBox.setText(str(config.get("save_freq", str(self.save_freq))))
+            self.freqBox_2.setText(str(config.get("sampling_freq", str(self.sampling_freq))))
+            self._hasbox=True
 
     def read(self):
         self.labelLog.setText(f"Loading Video: {self.videofile}")
         try:
             self.vidcap = cv2.VideoCapture(self.videofile)
-            self.fps = 23
+            self.fps = int(self.fpsBox.text())
             self.dt = 1 / self.fps
             self.n_frames = int(self.vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
             self.labelLog.clear()
@@ -70,8 +116,59 @@ class MainWindow(QDialog):
             cv2.drawMarker(image, coord, color=(0,255,0), markerType=cv2.MARKER_CROSS, thickness=1)
         cv2.imshow(self.imshowName, image)
     
+    def saveCroppedImage(self):
+        if not self._hasbox:
+            self.labelLog.setText(f"Please draw a box first!")
+            return
+        else:
+            self.vidcap = cv2.VideoCapture(self.videofile)
+            # freq = int(self.freqBox.text())
+            video_to_image(self.vidcap, 
+                           self.vesselBoxLeft, 
+                           self.vesselBoxRight, 
+                           self.vesselBoxUp, 
+                           self.vesselBoxDown, 
+                           fps=23,
+                           freq = self.save_freq,
+                           dstdir=self.outputDir)
+    
     def calibrate_scale_vessel(self):
-        scale, done = QInputDialog.getDouble(self, "Calibration", "Enter real length (mm)")
+        if isinstance(self.firstImage, np.ndarray):
+            img = self.firstImage.copy()
+            cv2.imshow(self.imshowName, img)
+            box = []
+            def click_event(event, x, y, flags, params):
+                # checking for left mouse clicks
+                if event == cv2.EVENT_LBUTTONDOWN:
+                    if len(box) ==0:
+                        box.append((x, y))
+                    else:
+                        box.clear()
+                        box.append((x, y))
+                    # displaying the coordinates
+                    self._draw_markers(self.firstImage.copy(), box)
+                    self._hasbox = False
+                elif event == cv2.EVENT_LBUTTONUP:
+                    # displaying the coordinates
+                    box.append((x, y))
+                    self._draw_markers(self.firstImage.copy(), box)     
+                    self._hasbox = True
+                    scale, done = QInputDialog.getDouble(self, "Calibration", "Enter real length (mm)")
+                    boxarray = np.array(box)
+                    # pixel_length = np.sqrt(np.sum(np.square(boxarray[0] - boxarray[1])))
+                    pixel_length = abs(boxarray[0,1] - boxarray[1, 1])
+                    self.scaling = scale / pixel_length
+            
+            cv2.setMouseCallback(self.imshowName, click_event)
+            # wait for a key to be pressed to exit
+            cv2.waitKey(0)
+            # close the window
+            try:
+                cv2.destroyWindow(self.imshowName)
+            except Exception:
+                pass
+        else:
+            self.labelLog.setText("Please read a video file first!")
     
     def cropVessel(self):
         if isinstance(self.firstImage, np.ndarray):
@@ -88,6 +185,7 @@ class MainWindow(QDialog):
                         box.append((x, y))
                     # displaying the coordinates
                     self._draw_markers(self.firstImage.copy(), box)
+                    self._hasbox = False
                 elif event == cv2.EVENT_LBUTTONUP:
                     # displaying the coordinates
                     
@@ -101,6 +199,7 @@ class MainWindow(QDialog):
                     self.vesselBoxDown = max(y)
                     infor = 'Box Position: '+f'({self.vesselBoxLeft}, {self.vesselBoxUp}) '+f'({self.vesselBoxRight}, {self.vesselBoxDown})'
                     self.labelLog.setText(infor)
+                    self._hasbox = True
             
             cv2.setMouseCallback(self.imshowName, click_event)
             # wait for a key to be pressed to exit
@@ -123,24 +222,40 @@ class MainWindow(QDialog):
         return image[self.vesselBoxUp:self.vesselBoxDown, self.vesselBoxLeft:self.vesselBoxRight]
     
     def fit_vessel(self):
-        if not os.path.exists(self.videofile):
-            self.showVideoFile.setText(f"Video file does not exist: {self.videofile}")
+        if not self._hasbox:
+            self.labelLog.setText(f"Please draw a box first!")
+            return
+        elif not os.path.exists(self.videofile):
+            self.labelLog.setText(f"Video file does not exist: {self.videofile}")
             return
         elif not os.path.exists(self.outputDir):
-            self.showVideoFile.setText(f"Output directory does not exist: {self.outputDir}")
+            self.labelLog.setText(f"Output directory does not exist: {self.outputDir}")
             return
         else:
+            # save configuration
+            config = {
+                "sampling_freq": self.sampling_freq,
+                "scaling": self.scaling,
+                "save_freq": self.save_freq,
+                "fps": self.fps,
+                "vesselBoxLeft": self.vesselBoxLeft,
+                "vesselBoxRight": self.vesselBoxRight,
+                "vesselBoxUp": self.vesselBoxUp,
+                "vesselBoxDown": self.vesselBoxDown
+            }
+            json.dump(config, open(os.path.join(self.outputDir, "config.json"), "w"), indent=4)
+            
             self.vidcap = cv2.VideoCapture(self.videofile)
             success, self.firstImage = self.vidcap.read()
             i = 0
             image = self._crop(self.firstImage)
-            guess, x_grid, image, edge1, edge2 = fit(image.copy(), plot=False)
+            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, ref=self.refimg)
             image = cv2.polylines(image,[np.array([x_grid, edge1]).T.astype(np.int32)], False, (255,0,0))
             image = cv2.polylines(image,[np.array([x_grid, edge2]).T.astype(np.int32)], False, (255,0,0))
             curtime = int(i*self.dt)
             cv2.imwrite(os.path.join(self.outputDir, "{:d}m{:d}s.png".format(curtime//60, curtime%60)), image)
 
-            thickness = calc_thickness(guess, x_grid)
+            thickness = calc_thickness(guess, x_grid, edge_func=calc_edge_polynomial)* self.scaling
             results = [[0, thickness]]
             t1 = time.time()
             while success:
@@ -148,28 +263,37 @@ class MainWindow(QDialog):
                 # read next frame
                 success, image = self.vidcap.read()
                 if not image is None:
-                    try:
-                        image = self._crop(image)
-                        guess, x_grid, image, edge1, edge2 = fit(image.copy(), plot=False, guess = guess)
-                        if i % 100==0:
-                            image = cv2.polylines(image,[np.array([x_grid, edge1]).T.astype(np.int32)], False, (255,0,0))
-                            image = cv2.polylines(image,[np.array([x_grid, edge2]).T.astype(np.int32)], False, (255,0,0))
-                            curtime = int(i*self.dt)
-                            cv2.imwrite(os.path.join(self.outputDir, "{:d}m{:d}s.png".format(curtime//60, curtime%60)), image)
-            
-                        thickness = calc_thickness(guess, x_grid)
-                        results.append([i*self.dt, thickness])
-                    except Exception as ex:
-                        self.labelLog.setText(str(ex))
+                    if i%self.sampling_freq==0:
+                        try:
+                            image = self._crop(image)
+                            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, ref=self.refimg)
+                            if i % self.save_freq==0:
+                                image = cv2.polylines(image,[np.array([x_grid, edge1]).T.astype(np.int32)], False, (255,0,0))
+                                image = cv2.polylines(image,[np.array([x_grid, edge2]).T.astype(np.int32)], False, (255,0,0))
+                                curtime = int(i*self.dt)
+                                cv2.imwrite(os.path.join(self.outputDir, "{:d}m{:d}s.png".format(curtime//60, curtime%60)), image)
+                
+                            thickness = calc_thickness(guess, x_grid, edge_func=calc_edge_polynomial)* self.scaling
+                            results.append([i*self.dt, thickness])
+                        except Exception as ex:
+                            self.labelLog.setText(str(ex))
                 else:
                     break
+            
+            results = np.array(results)
+            b, a = signal.butter(2, 1/(self.fps*30/(np.log(self.sampling_freq**2)+1)), "low", analog = False) 
+            col_filtered = signal.filtfilt(b, a, results[:, 1])
+            # col_conv = np.convolve(col_filtered, np.ones(69), 'same') / 69
+            results = np.concatenate([results, np.expand_dims(col_filtered, axis=1)], axis=1)
+            
             try:
-                np.savetxt(os.path.join(self.outputDir, "results.csv"), np.array(results), delimiter=",")
+                np.savetxt(os.path.join(self.outputDir, "results.csv"), results, delimiter=",", header="Time(s),Raw(mm),Butterworth,Conv1d")
             except Exception:
-                np.savetxt(os.path.join(self.outputDir, "results_.csv"), np.array(results), delimiter=",")
+                np.savetxt(os.path.join(self.outputDir, "results_.csv"), results, delimiter=",")
             t2 = time.time()
             t = t2 - t1
             self.labelLog.setText(f"Finished. Used {t//60} mins and {t%60} seconds")
+            
             
             return
     
