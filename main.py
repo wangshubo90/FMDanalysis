@@ -6,11 +6,13 @@ from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog
 from PyQt5.uic import loadUi
 import cv2
 import numpy as np
+import fitVessel
 from fitVessel import *
 from crop import video_to_image
 from crop import click_event
 from scipy import signal
 import json
+from matplotlib import pyplot as plt
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -34,7 +36,15 @@ class MainWindow(QDialog):
         self.freqBox.setText(str(self.save_freq))
         self.freqBox.textChanged[str].connect(self._updateSavFreq)
         self.fpsBox.setText("23")
+        self.fps = int(self.fpsBox.text())
+        self.dt = 1 / self.fps
         self.fpsBox.textChanged[str].connect(self._updateFPS)
+        self.minBox.setText(str(fitVessel.CANNY_LOWER))
+        fitVessel.CANNY_LOWER=float(self.minBox.text())
+        self.minBox.textChanged[str].connect(self._updateThreshold)
+        self.maxBox.setText(str(fitVessel.CANNY_HIGHER))
+        fitVessel.CANNY_HIGHER=float(self.maxBox.text())
+        self.maxBox.textChanged[str].connect(self._updateThreshold)
         self.videofile = ""
         self.outputDir = ""
         self.vidcap=None
@@ -52,7 +62,17 @@ class MainWindow(QDialog):
         filename = QFileDialog.getOpenFileName(None, 'Load Video', '', 'Video Files (*.avi *.mp4 *.mov)')[0]
         self.videofile = filename
         self.showVideoFile.setText(filename)
-        
+    
+    def _updateThreshold(self):
+        self.labelLog.clear()
+        if self.minBox.text() != "":
+            fitVessel.CANNY_LOWER=float(self.minBox.text())
+            self.labelLog.setText(f"MinEdge: {fitVessel.CANNY_LOWER} MaxEdge: {fitVessel.CANNY_HIGHER}")
+            
+        if self.maxBox.text() != "":
+            fitVessel.CANNY_HIGHER=float(self.maxBox.text())
+            self.labelLog.setText(f"MinEdge: {fitVessel.CANNY_LOWER} MaxEdge: {fitVessel.CANNY_HIGHER}")
+    
     def _updateFPS(self):
         if self.fpsBox.text() != "":
             self.fps = int(self.fpsBox.text())
@@ -74,7 +94,7 @@ class MainWindow(QDialog):
         filename = QFileDialog.getOpenFileName(None, 'Load Reference Image', '', 'Video Files (*.png *.jpg *.jpeg *.bmp *.tiff *.tif)')[0]
         if filename:
             self.refimg = cv2.imread(filename)
-            self.refimg = cv2.cvtColor(self.refimg, cv2.COLOR_BGR2GRAY)
+            # self.refimg = cv2.cvtColor(self.refimg, cv2.COLOR_BGR2GRAY)
             
     def loadConfig(self):
         filename = QFileDialog.getOpenFileName(None, 'Load Configuration', '', 'JSON Files (*.json)')[0]
@@ -87,6 +107,13 @@ class MainWindow(QDialog):
             self.freqBox.setText(str(config.get("save_freq", str(self.save_freq))))
             self.freqBox_2.setText(str(config.get("sampling_freq", str(self.sampling_freq))))
             self._hasbox=True
+            fitVessel.CANNY_LOWER = self.MinEdge
+            fitVessel.CANNY_HIGHER = self.MaxEdge
+            self.minBox.setText(str(fitVessel.CANNY_LOWER))
+            self.maxBox.setText(str(fitVessel.CANNY_HIGHER))
+            self.labelLog.clear()
+            self.labelLog.setText(json.dumps(config))
+            
 
     def read(self):
         self.labelLog.setText(f"Loading Video: {self.videofile}")
@@ -158,6 +185,7 @@ class MainWindow(QDialog):
                     # pixel_length = np.sqrt(np.sum(np.square(boxarray[0] - boxarray[1])))
                     pixel_length = abs(boxarray[0,1] - boxarray[1, 1])
                     self.scaling = scale / pixel_length
+                    self.labelLog.setText(str(f"Scaling factor: {self.scaling:3.2f} mm/pixel"))
             
             cv2.setMouseCallback(self.imshowName, click_event)
             # wait for a key to be pressed to exit
@@ -241,20 +269,21 @@ class MainWindow(QDialog):
                 "vesselBoxLeft": self.vesselBoxLeft,
                 "vesselBoxRight": self.vesselBoxRight,
                 "vesselBoxUp": self.vesselBoxUp,
-                "vesselBoxDown": self.vesselBoxDown
+                "vesselBoxDown": self.vesselBoxDown,
+                "MinEdge": fitVessel.CANNY_LOWER,
+                "MaxEdge": fitVessel.CANNY_HIGHER,
             }
             json.dump(config, open(os.path.join(self.outputDir, "config.json"), "w"), indent=4)
-            
+            # process first frame
+            i = 0
+            curtime = int(i*self.dt)
             self.vidcap = cv2.VideoCapture(self.videofile)
             success, self.firstImage = self.vidcap.read()
-            i = 0
             image = self._crop(self.firstImage)
-            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, ref=self.refimg)
+            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=self.refimg)
             image = cv2.polylines(image,[np.array([x_grid, edge1]).T.astype(np.int32)], False, (255,0,0))
             image = cv2.polylines(image,[np.array([x_grid, edge2]).T.astype(np.int32)], False, (255,0,0))
-            curtime = int(i*self.dt)
             cv2.imwrite(os.path.join(self.outputDir, "{:d}m{:d}s.png".format(curtime//60, curtime%60)), image)
-
             thickness = calc_thickness(guess, x_grid, edge_func=calc_edge_polynomial)* self.scaling
             results = [[0, thickness]]
             t1 = time.time()
@@ -265,8 +294,11 @@ class MainWindow(QDialog):
                 if not image is None:
                     if i%self.sampling_freq==0:
                         try:
+                            self.labelLog.clear()
+                            self.labelLog.setText("In process: {:d}m{:d}".format(curtime//60, curtime%60))
                             image = self._crop(image)
-                            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, ref=self.refimg)
+                            # image = cv2.imread(os.path.join(self.outputDir, "orgCropped", "{:d}m{:d}s.png".format(curtime//60, curtime%60)))
+                            guess, x_grid, image, edge1, edge2 = fit(image, plot=False, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=self.refimg)
                             if i % self.save_freq==0:
                                 image = cv2.polylines(image,[np.array([x_grid, edge1]).T.astype(np.int32)], False, (255,0,0))
                                 image = cv2.polylines(image,[np.array([x_grid, edge2]).T.astype(np.int32)], False, (255,0,0))
@@ -292,8 +324,10 @@ class MainWindow(QDialog):
                 np.savetxt(os.path.join(self.outputDir, "results_.csv"), results, delimiter=",")
             t2 = time.time()
             t = t2 - t1
-            self.labelLog.setText(f"Finished. Used {t//60} mins and {t%60} seconds")
-            
+            self.labelLog.setText(f"Finished. Used {t//60} mins and {t%60:.2f} seconds")
+            plt.plot(results[:, 0], results[:, 1], label="raw")
+            plt.plot(results[:, 0], results[:, 2], label="filtered")
+            plt.show()
             
             return
     
@@ -303,7 +337,7 @@ if __name__ == "__main__":
     mainWindow = MainWindow(ui)
     widget = QtWidgets.QStackedWidget()
     widget.addWidget(mainWindow)
-    widget.setFixedHeight(280)
-    widget.setFixedWidth(600)
+    widget.setFixedHeight(430)
+    widget.setFixedWidth(470)
     widget.show()
     sys.exit(app.exec_())

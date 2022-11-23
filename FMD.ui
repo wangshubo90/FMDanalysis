@@ -6,215 +6,210 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>607</width>
-    <height>278</height>
+    <width>474</width>
+    <height>430</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Dialog</string>
   </property>
-  <widget class="QLabel" name="labelLog">
-   <property name="geometry">
-    <rect>
-     <x>60</x>
-     <y>190</y>
-     <width>291</width>
-     <height>61</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Welcome!</string>
-   </property>
-   <property name="wordWrap">
-    <bool>true</bool>
-   </property>
-  </widget>
   <widget class="QWidget" name="">
    <property name="geometry">
     <rect>
      <x>50</x>
-     <y>130</y>
-     <width>301</width>
-     <height>48</height>
+     <y>31</y>
+     <width>382</width>
+     <height>364</height>
     </rect>
    </property>
-   <layout class="QGridLayout" name="gridLayout">
-    <item row="1" column="0">
-     <widget class="QLabel" name="labelRefDir_3">
-      <property name="text">
-       <string>FPS</string>
-      </property>
-     </widget>
-    </item>
-    <item row="0" column="2">
-     <widget class="QLabel" name="labelRefDir_4">
-      <property name="text">
-       <string>Calc Freq</string>
-      </property>
-     </widget>
-    </item>
-    <item row="0" column="1">
-     <widget class="QLineEdit" name="freqBox"/>
-    </item>
-    <item row="1" column="1">
-     <widget class="QLineEdit" name="fpsBox"/>
-    </item>
-    <item row="0" column="0">
-     <widget class="QLabel" name="labelRefDir_2">
-      <property name="text">
-       <string>Save Freq</string>
-      </property>
-     </widget>
-    </item>
-    <item row="0" column="3">
-     <widget class="QLineEdit" name="freqBox_2"/>
-    </item>
-   </layout>
-  </widget>
-  <widget class="QWidget" name="">
-   <property name="geometry">
-    <rect>
-     <x>360</x>
-     <y>140</y>
-     <width>214</width>
-     <height>112</height>
-    </rect>
-   </property>
-   <layout class="QGridLayout" name="gridLayout_2">
-    <item row="3" column="1">
-     <widget class="QPushButton" name="saveButton">
-      <property name="text">
-       <string>Save raw imgs</string>
-      </property>
-     </widget>
-    </item>
-    <item row="2" column="1">
-     <widget class="QPushButton" name="saveButtonVessel">
-      <property name="text">
-       <string>Calibrate</string>
-      </property>
-     </widget>
-    </item>
-    <item row="2" column="0">
-     <widget class="QPushButton" name="cropButtonVideo">
-      <property name="text">
-       <string>Crop Video -- Vessel</string>
-      </property>
-     </widget>
-    </item>
-    <item row="3" column="0">
-     <widget class="QPushButton" name="loadrefButton">
-      <property name="text">
-       <string>Load Reference Image</string>
-      </property>
-     </widget>
-    </item>
-    <item row="4" column="0" colspan="2">
-     <widget class="QPushButton" name="calcThickness">
-      <property name="text">
-       <string>Calculate Thickness</string>
-      </property>
-     </widget>
-    </item>
-    <item row="1" column="0" colspan="2">
-     <widget class="QPushButton" name="readButton">
-      <property name="text">
-       <string>Read</string>
-      </property>
-     </widget>
-    </item>
-   </layout>
-  </widget>
-  <widget class="QWidget" name="">
-   <property name="geometry">
-    <rect>
-     <x>50</x>
-     <y>30</y>
-     <width>521</width>
-     <height>89</height>
-    </rect>
-   </property>
-   <layout class="QVBoxLayout" name="verticalLayout">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <layout class="QVBoxLayout" name="verticalLayout">
       <item>
-       <widget class="QLabel" name="labelRefDir">
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="text">
-         <string>Selet Video File</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QLabel" name="labelRefDir">
+          <property name="minimumSize">
+           <size>
+            <width>120</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Selet Video File</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="showVideoFile"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="browseVideo">
+          <property name="text">
+           <string>1. Browse</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
-       <widget class="QLineEdit" name="showVideoFile"/>
-      </item>
-      <item>
-       <widget class="QPushButton" name="browseVideo">
-        <property name="text">
-         <string>Browse</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout">
+        <item>
+         <widget class="QLabel" name="labelTarDir">
+          <property name="minimumSize">
+           <size>
+            <width>120</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Selet Output Directory</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="showOutput"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="browseOutput">
+          <property name="text">
+           <string>2. Browse</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </item>
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QLabel" name="labelTarDir">
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>0</height>
-         </size>
-        </property>
+     <layout class="QGridLayout" name="gridLayout">
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="minBox">
         <property name="text">
-         <string>Selet Output Directory</string>
+         <string/>
         </property>
        </widget>
       </item>
-      <item>
-       <widget class="QLineEdit" name="showOutput"/>
-      </item>
-      <item>
-       <widget class="QPushButton" name="browseOutput">
+      <item row="0" column="2">
+       <widget class="QLabel" name="labelRefDir_4">
         <property name="text">
-         <string>Browse</string>
+         <string>Calc Freq</string>
         </property>
        </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="freqBox"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelMin">
+        <property name="text">
+         <string>MinEdge</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelRefDir_2">
+        <property name="text">
+         <string>Save Freq</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="fpsBox"/>
+      </item>
+      <item row="0" column="3">
+       <widget class="QLineEdit" name="freqBox_2"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelRefDir_3">
+        <property name="text">
+         <string>FPS</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="2">
+       <widget class="QLabel" name="labelMax">
+        <property name="text">
+         <string>MaxEdge</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="3">
+       <widget class="QLineEdit" name="maxBox"/>
       </item>
      </layout>
     </item>
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout_3">
-      <item>
-       <widget class="QLabel" name="labelTarDir_2">
-        <property name="minimumSize">
-         <size>
-          <width>120</width>
-          <height>0</height>
-         </size>
-        </property>
+     <layout class="QGridLayout" name="gridLayout_2">
+      <item row="2" column="1">
+       <widget class="QPushButton" name="saveButtonVessel">
         <property name="text">
-         <string>Load Config (optional)</string>
+         <string>5. Calibrate</string>
         </property>
        </widget>
       </item>
-      <item>
-       <widget class="QLineEdit" name="showConfig"/>
+      <item row="3" column="0">
+       <widget class="QPushButton" name="loadrefButton">
+        <property name="text">
+         <string>6. Load Reference Image</string>
+        </property>
+       </widget>
       </item>
-      <item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="saveButton">
+        <property name="text">
+         <string>Save raw imgs</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="2">
+       <widget class="QPushButton" name="calcThickness">
+        <property name="text">
+         <string>7. Calculate Thickness</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QPushButton" name="cropButtonVideo">
+        <property name="text">
+         <string>4. Crop Video -- Vessel</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QPushButton" name="readButton">
+        <property name="text">
+         <string>3. Read</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
        <widget class="QPushButton" name="browseConfig">
         <property name="text">
-         <string>Browse</string>
+         <string>Load Config (optional， skip to 6)</string>
         </property>
        </widget>
       </item>
      </layout>
+    </item>
+    <item>
+     <widget class="QLabel" name="labelLog">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>100</height>
+       </size>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Box</enum>
+      </property>
+      <property name="text">
+       <string>Welcome!</string>
+      </property>
+      <property name="wordWrap">
+       <bool>true</bool>
+      </property>
+     </widget>
     </item>
    </layout>
   </widget>

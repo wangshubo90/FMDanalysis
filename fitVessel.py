@@ -9,7 +9,7 @@ import cv2
 import copy
 from skimage.exposure import match_histograms
 
-CANNY_LOWER=70
+CANNY_LOWER=90
 CANNY_HIGHER=200
 
 def sigmoid(x):
@@ -107,7 +107,7 @@ def fit_vessel(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
         
         z = calc_map(a, mesh_x1d, mesh_y1d, edge_func=calc_edge_polynomial).flatten()
         
-        return 1-np.abs(pearsonr(z, image1d**0.5)[0])
+        return 1-np.abs(pearsonr(z, image1d)[0])
     
     h, w = image.shape
     x_grid = np.linspace(0, w-1, w)
@@ -138,24 +138,42 @@ def fit_vessel_fourier(image, guess=np.array([15, 0.1, 0.001, 35, 0.1, 0.001]),
     a0 = guess
     res_lsq = least_squares(fit, a0, method="trf",ftol=1e-5, xtol=1e-4, gtol=1e-5, args=(mesh_x1d, mesh_y1d, image1d), bounds=[lbound, rbound])
     return res_lsq
-    
+
+def pad_edge(image):
+    # nimage = np.where(image==0, 1, 0)
+    y , x = np.nonzero(image)
+    for i in range(image.shape[1]):
+        y_i = y[x==i]
+        up = y_i[np.argmin(y_i)]
+        down = y_i[np.argmax(y_i)]
+        image[0:up, i] = 1
+        image[down:, i] = 1
+    return image
+
 def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_vessel_fourier, edge_func=calc_edge_fourier, refimg = None, **kwargs):
     if isinstance(fimage, str):
         gimage = cv2.imread(fimage)
     else:
         gimage = fimage
     assert isinstance(gimage, np.ndarray), f"{type(gimage)}"
-    gimage = cv2.cvtColor(gimage, cv2.COLOR_BGR2GRAY)
-    image = copy.deepcopy(gimage)
     # image = cv2.GaussianBlur(image, (3,3), 1.5)
     if not refimg is None:
-        image = match_histograms(image, refimg, channel_axis=-1)
+        # print(image.shape)
+        gimage = match_histograms(gimage, refimg, channel_axis=-1)
+        gimage = cv2.cvtColor(gimage, cv2.COLOR_BGR2GRAY)
     else:
-        image = cv2.equalizeHist(image)
-    image = cv2.GaussianBlur(image, (3,3), 2.0)
+        gimage = cv2.cvtColor(gimage, cv2.COLOR_BGR2GRAY)
+        gimage = cv2.equalizeHist(gimage)
+    bmask = gimage>100
+    image = copy.deepcopy(gimage)
+    # image = cv2.GaussianBlur(image, (3,3), 2.0)
     
+    image = image*bmask
     image = cv2.Canny(image, CANNY_LOWER, CANNY_HIGHER, L2gradient=True)
-    image = cv2.GaussianBlur(image, (3,3), 3.0)
+    image = np.where(cv2.GaussianBlur(image, (3,3), 2.0)>0, 1, 0)
+    image = cv2.morphologyEx(image.astype(np.float32), cv2.MORPH_CLOSE, np.ones((5,5)), iterations=1)
+    image = pad_edge(image)
+    image = cv2.morphologyEx(image.astype(np.float32), cv2.MORPH_CLOSE, np.ones((5,5)), iterations=1)
     image = image.astype(np.float32)
     # image = image/255.0
     # image = image**1
@@ -177,25 +195,27 @@ def fit(fimage, plot=False, init_func=fourier_init_condition, fit_func = fit_ves
     
     edge1, edge2 = edge_func(x_grid, result.x)
     
-    # if plot:
-    #     mask = masking(gimage, result.x, edge_func=edge_func)
-    #     figure, axes = plt.subplots(1, 3, figsize=(15, 7))
+    if plot:
+        mask = masking(gimage, result.x, edge_func=edge_func)
+        figure, axes = plt.subplots(1, 3, figsize=(15, 7))
 
-    #     axes[0].imshow(gimage, cmap = "gray")
-    #     axes[0].plot(x_grid, edge1, "r-")
-    #     axes[0].plot(x_grid, edge2, "r-")        
-    #     axes[1].imshow(image, cmap = "gray")
-    #     axes[1].plot(x_grid, edge1, "r-")
-    #     axes[1].plot(x_grid, edge2, "r-")
-    #     axes[2].imshow(mask, cmap = "gray")
-    #     axes[2].plot(x_grid, edge1, "r-")
-    #     axes[2].plot(x_grid, edge2, "r-")
+        axes[0].imshow(gimage, cmap = "gray")
+        axes[0].plot(x_grid, edge1, "r-")
+        axes[0].plot(x_grid, edge2, "r-")        
+        axes[1].imshow(image, cmap = "gray")
+        axes[1].plot(x_grid, edge1, "r-")
+        axes[1].plot(x_grid, edge2, "r-")
+        axes[2].imshow(mask, cmap = "gray")
+        axes[2].plot(x_grid, edge1, "r-")
+        axes[2].plot(x_grid, edge2, "r-")
 
-    #     # plt.imshow(np.concatenate([image, mask], axis=1), cmap = "gray")
-    #     if isinstance(fimage, str):
-    #         plt.title(os.path.basename(fimage))
-    #     plt.show()
-    #     plt.close()
+        # plt.imshow(np.concatenate([image, mask], axis=1), cmap = "gray")
+        if isinstance(fimage, str):
+            plt.title(os.path.basename(fimage))
+        if "to_file" in kwargs:
+            figure.savefig(kwargs["to_file"], dpi=150)
+        plt.show()
+        plt.close()
     
     # image = image*255
 
@@ -252,20 +272,24 @@ if __name__ == "__main__":
     #         results.append(main(f"output\\frame{i}.jpg", guess = guess))
     
     # animation()
+    refimg = cv2.imread(r"ref.png")
+    # refimg = cv2.cvtColor(refimg, cv2.COLOR_BGR2GRAY)
     
     import glob, time
     t1 = time.time()
-    filelist = glob.glob(r"test4/orgCropped/*.png")
-    # N = 5
+    filelist = glob.glob(r"C:\Users\wangs\dev\Ultrasond\test\orgCropped\*.png")
+    N = 5
     # filelist = filelist[::N]
     dt = 1/(20 / N)
     for i, file in enumerate(filelist):
         if i ==0:
-            guess, x_grid, image, edge1, edge2 = fit(file, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel)
+            img = cv2.imread(file)
+            guess, x_grid, image, edge1, edge2 = fit(img, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=refimg)
             temp = guess
             gimage = copy.deepcopy(image)
         else:
-            guess, x_grid, image, edge1, edge2 = fit(file, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=gimage)
+            img = cv2.imread(file)
+            guess, x_grid, image, edge1, edge2 = fit(img, plot=True, init_func=polynomial_init_condition, edge_func=calc_edge_polynomial, fit_func=fit_vessel, refimg=refimg)
         thickness = calc_thickness(guess, x_grid, edge_func=calc_edge_polynomial)
         # print(temp - guess)
         xdata.append(i*dt)
